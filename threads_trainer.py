@@ -27,6 +27,153 @@ DEFAULT_URL_TEMPLATE = "https://www.threads.com/search?q={query}"
 PROFILE_DIR = Path(__file__).resolve().parent / ".browser-profile"
 POST_PATH_MARKER = "/post/"
 VISIBLE_TEXT_LIMIT = 180
+CATEGORY_PRESETS = {
+    "wellbeing": {
+        "zh": {
+            "name": "平靜與身心健康",
+            "description": "降低焦慮、建立健康的數位生活節奏。",
+            "topics": [
+                "遠離網路焦慮",
+                "健康數位習慣",
+                "正念生活",
+                "專注力工具",
+                "慢生活",
+            ],
+        },
+        "en": {
+            "name": "Calm and wellbeing",
+            "description": "Reduce anxiety and build healthier digital habits.",
+            "topics": [
+                "internet anxiety relief",
+                "healthy digital habits",
+                "mindfulness",
+                "focus tools",
+                "slow living",
+            ],
+        },
+    },
+    "learning": {
+        "zh": {
+            "name": "學習與知識",
+            "description": "讓推薦內容偏向可長期累積的知識。",
+            "topics": [
+                "深度學習方法",
+                "閱讀筆記",
+                "科學新知",
+                "語言學習",
+                "知識管理",
+            ],
+        },
+        "en": {
+            "name": "Learning",
+            "description": "Nudge the feed toward useful, compounding knowledge.",
+            "topics": [
+                "learning how to learn",
+                "reading notes",
+                "science news",
+                "language learning",
+                "knowledge management",
+            ],
+        },
+    },
+    "creative": {
+        "zh": {
+            "name": "創作靈感",
+            "description": "補充攝影、設計、寫作與創意練習。",
+            "topics": [
+                "攝影靈感",
+                "設計思考",
+                "寫作練習",
+                "手作創意",
+                "影像敘事",
+            ],
+        },
+        "en": {
+            "name": "Creative",
+            "description": "Bring in photography, design, writing, and craft ideas.",
+            "topics": [
+                "photography inspiration",
+                "design thinking",
+                "writing practice",
+                "creative craft",
+                "visual storytelling",
+            ],
+        },
+    },
+    "local_life": {
+        "zh": {
+            "name": "在地生活",
+            "description": "把近期訊號轉向城市、旅遊與生活提案。",
+            "topics": [
+                "台灣旅遊",
+                "台北咖啡店",
+                "城市散步",
+                "在地文化",
+                "週末活動",
+            ],
+        },
+        "en": {
+            "name": "Local life",
+            "description": "Shift recent signals toward places, travel, and daily life.",
+            "topics": [
+                "Taiwan travel",
+                "Taipei cafes",
+                "city walks",
+                "local culture",
+                "weekend events",
+            ],
+        },
+    },
+    "technology": {
+        "zh": {
+            "name": "科技與工具",
+            "description": "追蹤實用科技、開發與生產力工具。",
+            "topics": [
+                "Python",
+                "AI 工具",
+                "資料視覺化",
+                "開源專案",
+                "生產力工具",
+            ],
+        },
+        "en": {
+            "name": "Technology",
+            "description": "Follow useful technology, development, and productivity tools.",
+            "topics": [
+                "Python",
+                "AI tools",
+                "data visualization",
+                "open source projects",
+                "productivity tools",
+            ],
+        },
+    },
+    "custom": {
+        "zh": {
+            "name": "自訂",
+            "description": "保留目前文字，不套用預設主題。",
+            "topics": [],
+        },
+        "en": {
+            "name": "Custom",
+            "description": "Keep the current text and write your own topics.",
+            "topics": [],
+        },
+    },
+}
+
+
+def localized_category_presets(language: str) -> list[dict[str, object]]:
+    lang = "zh" if language.startswith("zh") else "en"
+    return [
+        {
+            "id": preset_id,
+            "name": values[lang]["name"],
+            "description": values[lang]["description"],
+            "topics": list(values[lang]["topics"]),
+        }
+        for preset_id, values in CATEGORY_PRESETS.items()
+    ]
 
 
 @dataclass(frozen=True)
@@ -364,7 +511,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == "/" or self.path.startswith("/?"):
-            self._send_html(INDEX_HTML)
+            self._send_html(render_index_html())
             return
 
         if self.path == "/api/state":
@@ -492,6 +639,17 @@ def main() -> None:
         server.server_close()
 
 
+def render_index_html() -> str:
+    category_presets = {
+        "zh": localized_category_presets("zh"),
+        "en": localized_category_presets("en"),
+    }
+    return INDEX_HTML.replace(
+        "__CATEGORY_PRESETS_JSON__",
+        json.dumps(category_presets, ensure_ascii=False),
+    )
+
+
 INDEX_HTML = r"""<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -501,15 +659,20 @@ INDEX_HTML = r"""<!doctype html>
   <style>
     :root {
       color-scheme: light;
-      --bg: #f5f7f8;
-      --panel: #ffffff;
-      --ink: #1c2429;
-      --muted: #63727a;
-      --line: #d8e0e4;
-      --primary: #146c63;
+      --bg: #f6f4ef;
+      --panel: #fffdf8;
+      --panel-strong: #faf8f1;
+      --ink: #202725;
+      --muted: #65716c;
+      --line: #ded9cc;
+      --line-soft: #ebe6d9;
+      --primary: #1f6f63;
+      --primary-soft: #edf5f1;
       --primary-ink: #ffffff;
-      --danger: #aa3a32;
-      --field: #fbfcfc;
+      --danger: #a24b3f;
+      --danger-soft: #f2ded8;
+      --field: #faf8f1;
+      --shadow: 0 18px 45px rgba(49, 66, 58, 0.08);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     * { box-sizing: border-box; }
@@ -517,32 +680,65 @@ INDEX_HTML = r"""<!doctype html>
       margin: 0;
       background: var(--bg);
       color: var(--ink);
+      min-height: 100vh;
     }
     main {
-      width: min(1120px, calc(100vw - 32px));
-      margin: 24px auto;
+      width: min(1180px, calc(100vw - 32px));
+      margin: 28px auto;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 340px;
-      gap: 18px;
+      grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+      gap: 16px;
     }
     header {
       grid-column: 1 / -1;
       display: flex;
-      align-items: end;
+      align-items: flex-start;
       justify-content: space-between;
       gap: 16px;
+      margin-bottom: 2px;
+    }
+    .eyebrow {
+      margin: 0 0 7px;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 720;
     }
     h1 {
       margin: 0;
-      font-size: 28px;
+      font-size: clamp(28px, 4vw, 42px);
       line-height: 1.2;
-      font-weight: 700;
+      font-weight: 760;
       letter-spacing: 0;
+    }
+    .subtitle {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.55;
+      max-width: 680px;
+    }
+    .header-tools {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .language-select {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0 12px;
+      background: var(--panel);
+      color: var(--ink);
+      font: inherit;
+      font-size: 14px;
+      outline: none;
     }
     .status {
       border: 1px solid var(--line);
       border-radius: 999px;
-      padding: 7px 12px;
+      padding: 8px 13px;
       color: var(--muted);
       background: var(--panel);
       font-size: 14px;
@@ -556,7 +752,27 @@ INDEX_HTML = r"""<!doctype html>
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 16px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+    .panel-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    h2 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+    .helper {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
     }
     label {
       display: block;
@@ -577,15 +793,56 @@ INDEX_HTML = r"""<!doctype html>
       outline: none;
     }
     textarea:focus,
-    input:focus {
+    input:focus,
+    select:focus {
       border-color: var(--primary);
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
     }
     textarea {
-      min-height: 320px;
+      min-height: 250px;
       resize: vertical;
       line-height: 1.5;
     }
+    .categories {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 9px;
+      margin: 10px 0 16px;
+    }
+    .category {
+      min-height: 76px;
+      border: 1px solid var(--line-soft);
+      border-radius: 7px;
+      background: var(--panel-strong);
+      color: var(--ink);
+      padding: 10px;
+      text-align: left;
+      cursor: pointer;
+      transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+    }
+    .category:hover {
+      border-color: color-mix(in srgb, var(--primary) 35%, var(--line));
+      transform: translateY(-1px);
+    }
+    .category.active {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+    .category-name {
+      display: block;
+      font-weight: 720;
+      font-size: 13px;
+      line-height: 1.25;
+    }
+    .category-desc {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .category.active .category-desc { color: color-mix(in srgb, var(--primary) 72%, var(--muted)); }
     .grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -604,10 +861,11 @@ INDEX_HTML = r"""<!doctype html>
       display: flex;
       gap: 10px;
       margin-top: 16px;
+      flex-wrap: wrap;
     }
     button {
       min-height: 40px;
-      border: 0;
+      border: 1px solid transparent;
       border-radius: 6px;
       padding: 0 16px;
       font: inherit;
@@ -623,16 +881,38 @@ INDEX_HTML = r"""<!doctype html>
       color: var(--primary-ink);
     }
     .login {
-      background: #e8f0ef;
+      background: #e8f0ed;
       color: var(--primary);
+      border-color: #d0ded8;
     }
     .stop {
-      background: #f5dedb;
+      background: var(--danger-soft);
       color: var(--danger);
+      border-color: #e7c8c0;
+    }
+    .secondary {
+      background: var(--panel-strong);
+      color: var(--ink);
+      border-color: var(--line);
+    }
+    .note {
+      border: 1px solid #d7ded6;
+      border-radius: 7px;
+      background: #f2f7f2;
+      color: #3d5b50;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      margin-top: 12px;
+    }
+    .advanced {
+      border-top: 1px solid var(--line-soft);
+      padding-top: 14px;
+      margin-top: 14px;
     }
     .log {
-      min-height: 430px;
-      max-height: 560px;
+      min-height: 260px;
+      max-height: 440px;
       overflow: auto;
       display: flex;
       flex-direction: column;
@@ -645,80 +925,179 @@ INDEX_HTML = r"""<!doctype html>
       display: grid;
       grid-template-columns: 68px minmax(0, 1fr);
       gap: 8px;
-      border-bottom: 1px solid #eef2f3;
+      border-bottom: 1px solid var(--line-soft);
       padding-bottom: 8px;
     }
     .time { color: var(--muted); }
     .message { overflow-wrap: anywhere; }
+    .wide { grid-column: 1 / -1; }
     @media (max-width: 860px) {
       main { grid-template-columns: 1fr; }
       header { align-items: start; flex-direction: column; }
+      .header-tools { justify-content: flex-start; }
+      .categories { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 520px) {
+      main { width: min(100vw - 20px, 1180px); margin-top: 18px; }
+      section { padding: 14px; }
+      .grid, .categories { grid-template-columns: 1fr; }
+      .actions button { flex: 1 1 100%; }
     }
   </style>
 </head>
 <body>
   <main>
     <header>
-      <h1>Threads Feed Trainer</h1>
-      <div id="status" class="status">待命</div>
+      <div>
+        <p class="eyebrow" data-i18n="eyebrow">本機控制台</p>
+        <h1>Threads Feed Trainer</h1>
+        <p class="subtitle" data-i18n="heroSubtitle">用你主動選擇的主題，讓近期瀏覽訊號遠離網路焦慮與惡意資訊。</p>
+      </div>
+      <div class="header-tools">
+        <select id="language" class="language-select" aria-label="Language">
+          <option value="zh">繁中</option>
+          <option value="en">English</option>
+        </select>
+        <div id="status" class="status">待命</div>
+      </div>
     </header>
 
     <section>
-      <div class="field">
-        <label for="topics">主題</label>
-        <textarea id="topics" spellcheck="false">Python
-AI tools
-資料視覺化
-攝影
-台灣旅遊</textarea>
+      <div class="panel-heading">
+        <div>
+          <h2 data-i18n="topicsTitle">主題分類</h2>
+          <p class="helper" data-i18n="topicsHelper">選一組常見分類後仍可自由編輯內容。</p>
+        </div>
+        <button id="restore" class="secondary" type="button" data-i18n="restore">恢復上次內容</button>
       </div>
+      <div id="categories" class="categories"></div>
       <div class="field">
-        <label for="urlTemplate">URL 模板</label>
-        <input id="urlTemplate" type="text" value="https://www.threads.com/search?q={query}">
+        <label for="topics" data-i18n="topicsLabel">主題（一行一個）</label>
+        <textarea id="topics" spellcheck="false"></textarea>
       </div>
+      <div class="note" data-i18n="privacyNote">這個工具不會記錄或送出你的帳號密碼。登入會在專用 Chromium 視窗中手動完成；主題與執行紀錄只保留在你的電腦上。</div>
     </section>
 
     <section>
+      <div class="panel-heading">
+        <div>
+          <h2 data-i18n="settingsTitle">執行設定</h2>
+          <p class="helper" data-i18n="settingsHelper">保持低頻、接近人工閱讀節奏。</p>
+        </div>
+      </div>
       <div class="grid">
         <div class="field">
-          <label for="secondsPerTopic">每主題秒數</label>
+          <label for="secondsPerTopic" data-i18n="secondsPerTopic">每主題秒數</label>
           <input id="secondsPerTopic" type="number" min="10" max="600" value="35">
         </div>
         <div class="field">
-          <label for="scrollsPerTopic">滾動次數</label>
+          <label for="scrollsPerTopic" data-i18n="scrollsPerTopic">滾動次數</label>
           <input id="scrollsPerTopic" type="number" min="1" max="80" value="7">
         </div>
         <div class="field">
-          <label for="postsPerTopic">開啟貼文數</label>
+          <label for="postsPerTopic" data-i18n="postsPerTopic">開啟貼文數</label>
           <input id="postsPerTopic" type="number" min="0" max="20" value="3">
         </div>
         <div class="field">
-          <label for="cooldownSeconds">冷卻秒數</label>
+          <label for="cooldownSeconds" data-i18n="cooldownSeconds">冷卻秒數</label>
           <input id="cooldownSeconds" type="number" min="0" max="120" value="8">
         </div>
         <div class="field">
-          <label for="sessionMinutes">總分鐘數</label>
+          <label for="sessionMinutes" data-i18n="sessionMinutes">總分鐘數</label>
           <input id="sessionMinutes" type="number" min="1" max="240" value="20">
         </div>
       </div>
       <label class="toggle">
         <input id="headless" type="checkbox">
-        背景執行
+        <span data-i18n="headless">背景執行</span>
       </label>
+      <div class="advanced">
+        <div class="field">
+          <label for="urlTemplate" data-i18n="urlTemplate">URL 模板</label>
+          <input id="urlTemplate" type="text" value="https://www.threads.com/search?q={query}">
+          <p class="helper" data-i18n="urlHelper">保留 {query}，工具會替換成主題關鍵字。</p>
+        </div>
+      </div>
       <div class="actions">
-        <button id="login" class="login" type="button">登入/檢查帳號</button>
-        <button id="start" class="start" type="button">開始</button>
-        <button id="stop" class="stop" type="button" disabled>停止</button>
+        <button id="login" class="login" type="button" data-i18n="login">登入/檢查帳號</button>
+        <button id="start" class="start" type="button" data-i18n="start">開始</button>
+        <button id="stop" class="stop" type="button" disabled data-i18n="stop">停止</button>
       </div>
     </section>
 
-    <section style="grid-column: 1 / -1;">
-      <label>狀態</label>
+    <section class="wide">
+      <div class="panel-heading">
+        <div>
+          <h2 data-i18n="logTitle">狀態紀錄</h2>
+          <p class="helper" data-i18n="logHelper">只顯示本機執行過程，不會上傳到專案伺服器。</p>
+        </div>
+      </div>
       <div id="log" class="log"></div>
     </section>
   </main>
 
   <script>
+    const CATEGORY_PRESETS = __CATEGORY_PRESETS_JSON__;
+    const STORAGE_KEY = "threadsFeedTrainer.settings.v2";
+    const TRANSLATIONS = {
+      zh: {
+        eyebrow: "本機控制台",
+        heroSubtitle: "用你主動選擇的主題，讓近期瀏覽訊號遠離網路焦慮與惡意資訊。",
+        ready: "待命",
+        running: "執行中",
+        topicsTitle: "主題分類",
+        topicsHelper: "選一組常見分類後仍可自由編輯內容。",
+        restore: "恢復上次內容",
+        topicsLabel: "主題（一行一個）",
+        privacyNote: "這個工具不會記錄或送出你的帳號密碼。登入會在專用 Chromium 視窗中手動完成；主題與執行紀錄只保留在你的電腦上。",
+        settingsTitle: "執行設定",
+        settingsHelper: "保持低頻、接近人工閱讀節奏。",
+        secondsPerTopic: "每主題秒數",
+        scrollsPerTopic: "滾動次數",
+        postsPerTopic: "開啟貼文數",
+        cooldownSeconds: "冷卻秒數",
+        sessionMinutes: "總分鐘數",
+        headless: "背景執行",
+        urlTemplate: "URL 模板",
+        urlHelper: "保留 {query}，工具會替換成主題關鍵字。",
+        login: "登入/檢查帳號",
+        start: "開始",
+        stop: "停止",
+        loginDone: "完成登入",
+        logTitle: "狀態紀錄",
+        logHelper: "只顯示本機執行過程，不會上傳到專案伺服器。",
+        requestFailed: "請求失敗",
+      },
+      en: {
+        eyebrow: "Local control panel",
+        heroSubtitle: "Use topics you choose intentionally to move recent browsing signals away from internet anxiety and malicious information.",
+        ready: "Ready",
+        running: "Running",
+        topicsTitle: "Topic categories",
+        topicsHelper: "Choose a common set, then edit the topics freely.",
+        restore: "Restore last session",
+        topicsLabel: "Topics (one per line)",
+        privacyNote: "This tool does not record or submit your account password. Login happens manually in a dedicated Chromium window; topics and runtime logs stay on your computer.",
+        settingsTitle: "Session settings",
+        settingsHelper: "Keep sessions low-frequency and close to a human reading pace.",
+        secondsPerTopic: "Seconds per topic",
+        scrollsPerTopic: "Scrolls per topic",
+        postsPerTopic: "Posts to open",
+        cooldownSeconds: "Cooldown seconds",
+        sessionMinutes: "Total minutes",
+        headless: "Run in background",
+        urlTemplate: "URL template",
+        urlHelper: "Keep {query}; the tool replaces it with each topic keyword.",
+        login: "Login / check account",
+        start: "Start",
+        stop: "Stop",
+        loginDone: "Login complete",
+        logTitle: "Activity log",
+        logHelper: "Shows only local runtime activity; it is not uploaded to a project server.",
+        requestFailed: "Request failed",
+      },
+    };
+
     const fields = {
       topics: document.querySelector("#topics"),
       urlTemplate: document.querySelector("#urlTemplate"),
@@ -729,11 +1108,119 @@ AI tools
       sessionMinutes: document.querySelector("#sessionMinutes"),
       headless: document.querySelector("#headless"),
     };
+    const languageSelect = document.querySelector("#language");
+    const categoriesEl = document.querySelector("#categories");
+    const restoreButton = document.querySelector("#restore");
     const loginButton = document.querySelector("#login");
     const startButton = document.querySelector("#start");
     const stopButton = document.querySelector("#stop");
     const statusEl = document.querySelector("#status");
     const logEl = document.querySelector("#log");
+    let selectedLanguage = "zh";
+    let selectedCategory = "wellbeing";
+    let lastSavedSettings = null;
+
+    function inferLanguage() {
+      const languages = Array.from(navigator.languages || [navigator.language || ""]);
+      return languages.some((language) => {
+        const normalized = String(language).toLowerCase();
+        return normalized === "zh" || normalized.startsWith("zh-");
+      }) ? "zh" : "en";
+    }
+
+    function safeReadSettings() {
+      try {
+        const raw = window.localStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function safeSaveSettings(settings) {
+      lastSavedSettings = settings;
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+      } catch {
+        // localStorage can be unavailable in private or locked-down browsers.
+      }
+    }
+
+    function currentTranslation() {
+      return TRANSLATIONS[selectedLanguage] || TRANSLATIONS.zh;
+    }
+
+    function currentPresets() {
+      return CATEGORY_PRESETS[selectedLanguage] || CATEGORY_PRESETS.zh;
+    }
+
+    function topicsForCategory(categoryId) {
+      const preset = currentPresets().find((item) => item.id === categoryId);
+      return preset ? preset.topics.join("\n") : "";
+    }
+
+    function applyTranslations() {
+      const t = currentTranslation();
+      document.documentElement.lang = selectedLanguage === "zh" ? "zh-Hant" : "en";
+      document.querySelectorAll("[data-i18n]").forEach((node) => {
+        const key = node.getAttribute("data-i18n");
+        if (key && t[key]) node.textContent = t[key];
+      });
+      if (!STATE_RUNNING) {
+        statusEl.textContent = t.ready;
+      }
+      if (stopButton.dataset.mode === "login") {
+        stopButton.textContent = t.loginDone;
+      }
+    }
+
+    function renderCategories() {
+      categoriesEl.innerHTML = currentPresets().map((preset) => `
+        <button class="category ${preset.id === selectedCategory ? "active" : ""}" type="button" data-category="${preset.id}">
+          <span class="category-name">${escapeHtml(preset.name)}</span>
+          <span class="category-desc">${escapeHtml(preset.description)}</span>
+        </button>
+      `).join("");
+    }
+
+    function settingsSnapshot() {
+      return {
+        language: selectedLanguage,
+        category: selectedCategory,
+        topics: fields.topics.value,
+        urlTemplate: fields.urlTemplate.value,
+        secondsPerTopic: Number(fields.secondsPerTopic.value),
+        scrollsPerTopic: Number(fields.scrollsPerTopic.value),
+        postsPerTopic: Number(fields.postsPerTopic.value),
+        cooldownSeconds: Number(fields.cooldownSeconds.value),
+        sessionMinutes: Number(fields.sessionMinutes.value),
+        headless: fields.headless.checked,
+      };
+    }
+
+    function saveCurrentSettings() {
+      safeSaveSettings(settingsSnapshot());
+    }
+
+    function applySettings(settings) {
+      if (!settings || typeof settings !== "object") return false;
+      selectedLanguage = ["zh", "en"].includes(settings.language) ? settings.language : inferLanguage();
+      selectedCategory = typeof settings.category === "string" ? settings.category : "wellbeing";
+      languageSelect.value = selectedLanguage;
+      fields.topics.value = typeof settings.topics === "string" ? settings.topics : topicsForCategory(selectedCategory);
+      fields.urlTemplate.value = typeof settings.urlTemplate === "string" ? settings.urlTemplate : "https://www.threads.com/search?q={query}";
+      fields.secondsPerTopic.value = Number.isFinite(Number(settings.secondsPerTopic)) ? settings.secondsPerTopic : 35;
+      fields.scrollsPerTopic.value = Number.isFinite(Number(settings.scrollsPerTopic)) ? settings.scrollsPerTopic : 7;
+      fields.postsPerTopic.value = Number.isFinite(Number(settings.postsPerTopic)) ? settings.postsPerTopic : 3;
+      fields.cooldownSeconds.value = Number.isFinite(Number(settings.cooldownSeconds)) ? settings.cooldownSeconds : 8;
+      fields.sessionMinutes.value = Number.isFinite(Number(settings.sessionMinutes)) ? settings.sessionMinutes : 20;
+      fields.headless.checked = Boolean(settings.headless);
+      return true;
+    }
+
+    let STATE_RUNNING = false;
 
     function payload() {
       return {
@@ -756,7 +1243,7 @@ AI tools
       });
       const data = await response.json();
       if (!response.ok || data.ok === false) {
-        throw new Error(data.error || "Request failed");
+        throw new Error(data.error || currentTranslation().requestFailed);
       }
       return data;
     }
@@ -764,7 +1251,8 @@ AI tools
     async function refresh() {
       const response = await fetch("/api/state");
       const state = await response.json();
-      statusEl.textContent = state.running ? "執行中" : "待命";
+      STATE_RUNNING = state.running;
+      statusEl.textContent = state.running ? currentTranslation().running : currentTranslation().ready;
       statusEl.classList.toggle("running", state.running);
       loginButton.disabled = state.running;
       startButton.disabled = state.running;
@@ -787,9 +1275,47 @@ AI tools
         .replaceAll("'", "&#039;");
     }
 
+    categoriesEl.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-category]");
+      if (!button) return;
+      selectedCategory = button.dataset.category;
+      if (selectedCategory !== "custom") {
+        fields.topics.value = topicsForCategory(selectedCategory);
+      }
+      renderCategories();
+      saveCurrentSettings();
+    });
+
+    Object.values(fields).forEach((field) => {
+      field.addEventListener("input", () => {
+        if (field === fields.topics) selectedCategory = "custom";
+        renderCategories();
+        saveCurrentSettings();
+      });
+      field.addEventListener("change", saveCurrentSettings);
+    });
+
+    languageSelect.addEventListener("change", () => {
+      selectedLanguage = languageSelect.value;
+      applyTranslations();
+      renderCategories();
+      saveCurrentSettings();
+    });
+
+    restoreButton.addEventListener("click", () => {
+      const settings = safeReadSettings() || lastSavedSettings;
+      if (applySettings(settings)) {
+        applyTranslations();
+        renderCategories();
+        saveCurrentSettings();
+      }
+    });
+
     startButton.addEventListener("click", async () => {
       try {
-        stopButton.textContent = "停止";
+        stopButton.dataset.mode = "stop";
+        stopButton.textContent = currentTranslation().stop;
+        saveCurrentSettings();
         await postJson("/api/start", payload());
         await refresh();
       } catch (error) {
@@ -799,7 +1325,9 @@ AI tools
 
     loginButton.addEventListener("click", async () => {
       try {
-        stopButton.textContent = "完成登入";
+        stopButton.dataset.mode = "login";
+        stopButton.textContent = currentTranslation().loginDone;
+        saveCurrentSettings();
         await postJson("/api/login");
         await refresh();
       } catch (error) {
@@ -810,13 +1338,26 @@ AI tools
     stopButton.addEventListener("click", async () => {
       try {
         await postJson("/api/stop");
-        stopButton.textContent = "停止";
+        stopButton.dataset.mode = "stop";
+        stopButton.textContent = currentTranslation().stop;
         await refresh();
       } catch (error) {
         alert(error.message);
       }
     });
 
+    const storedSettings = safeReadSettings();
+    selectedLanguage = storedSettings?.language && ["zh", "en"].includes(storedSettings.language)
+      ? storedSettings.language
+      : inferLanguage();
+    languageSelect.value = selectedLanguage;
+    if (!applySettings(storedSettings)) {
+      selectedCategory = "wellbeing";
+      fields.topics.value = topicsForCategory(selectedCategory);
+    }
+    applyTranslations();
+    renderCategories();
+    saveCurrentSettings();
     refresh();
     setInterval(refresh, 1000);
   </script>

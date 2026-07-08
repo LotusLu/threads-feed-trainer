@@ -1,8 +1,10 @@
 import unittest
 
 from threads_trainer import (
+    CATEGORY_PRESETS,
     DEFAULT_URL_TEMPLATE,
     collect_post_urls,
+    localized_category_presets,
     parse_settings,
 )
 
@@ -32,6 +34,24 @@ class SettingsTests(unittest.TestCase):
                     "postsPerTopic": -1,
                 }
             )
+
+
+class CategoryPresetTests(unittest.TestCase):
+    def test_category_presets_include_bilingual_wellbeing_topics(self):
+        wellbeing = CATEGORY_PRESETS["wellbeing"]
+
+        self.assertEqual(wellbeing["zh"]["name"], "平靜與身心健康")
+        self.assertIn("遠離網路焦慮", wellbeing["zh"]["topics"])
+        self.assertEqual(wellbeing["en"]["name"], "Calm and wellbeing")
+        self.assertIn("healthy digital habits", wellbeing["en"]["topics"])
+
+    def test_localized_category_presets_returns_independent_lists(self):
+        presets = localized_category_presets("en")
+        presets[0]["topics"].append("mutated")
+
+        fresh_presets = localized_category_presets("en")
+
+        self.assertNotIn("mutated", fresh_presets[0]["topics"])
 
 
 class PostUrlTests(unittest.TestCase):

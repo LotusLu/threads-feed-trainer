@@ -1,4 +1,5 @@
 .browser-profile/
+.superpowers/
 .venv/
 __pycache__/
 *.py[cod]
