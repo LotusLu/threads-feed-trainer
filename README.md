@@ -1,32 +1,49 @@
-# Threads Feed Trainer
+<div align="center">
 
-## 中文說明
+<img src="assets/space-crew.webp" width="600" alt="恐龍太空人、橘貓與小機器人，準備搭火箭探索喜歡的內容">
 
-Threads Feed Trainer 是一個在本機執行的 Python 小工具，幫助你用「主動選擇的主題」調整近期 Threads 瀏覽訊號，讓推薦內容遠離網路焦慮、惡意資訊、情緒操弄與偶然點擊造成的資訊迴圈。
+# 🦖 脆脆馴獸師
 
-它會在專用 Chromium 瀏覽器設定檔中開啟 Threads 搜尋頁，依照你選的主題慢速瀏覽、滾動，並可短暫開啟可見貼文閱讀。這個工具設計成低頻、透明、手動啟動的本機控制台；它不會按讚、留言、轉發、追蹤帳號、爬取私人資料，也不會記錄或送出你的帳號密碼。
+**把喜歡的內容，放進你的宇宙。**
 
-### 主要功能
+恐龍領航、橘貓陪跑、小機器人記筆記。<br>
+用你自己選的主題，替 Threads 動態找個更喜歡的方向。
 
-- 在 `127.0.0.1` 開啟本機控制台
-- 支援繁體中文 / English 介面，首次開啟會依電腦瀏覽器語系預設
-- 常見主題分類可一鍵套用，也能自由編輯
-- 自動記住上次使用的分類、主題與執行設定
-- 使用專用 Chromium profile 保存 Threads 登入狀態
-- 可調整總時長、每主題停留秒數、滾動次數、開啟貼文數與冷卻秒數
-- 以接近人工閱讀的節奏瀏覽，包含隨機滾動距離與停留時間
-- 本機顯示執行紀錄
-- 不執行任何自動互動或成長駭客操作
+**✏️ 完全自訂主題　·　💾 本機保存　·　🙈 一鍵收合　·　🪟 專用瀏覽器**
 
-### 安裝需求
+</div>
 
-- Python 3.10+
-- Playwright 安裝的 Chromium
-- Threads 帳號（若 Threads 在你的地區或工作階段要求登入）
+「脆脆馴獸師」（Threads Feed Trainer）是在本機執行的 Python 小工具：開啟 Threads 搜尋頁、慢速滾動，並可短暫開啟可見貼文閱讀。每次探索都由你手動開始，也能隨時停止。
 
-### 安裝與啟動
+這是一趟主動選擇內容的小旅行；它不保證重置演算法或得到特定推薦結果，也不是 Threads 官方工具。
+
+## 🧭 小隊能做什麼？
+
+| 小隊裝備 | 幫你做的事 |
+| --- | --- |
+| ✏️ 喜好清單 | 每行寫一個自己的主題，沒有內建範例或預設分類。 |
+| 📒 記憶小本本 | 草稿自動保存；「恢復上次執行」另外保留上次啟動時的整組設定。 |
+| 🙈 秘密任務模式 | 主題與紀錄能分別收合，也能一起隱藏；重開後仍記得顯示偏好。 |
+| 🪟 同一艘飛船 | 登入、手動查看與自動瀏覽共用同一個專用 Chromium profile。 |
+| 🐢 慢慢探索 | 自訂時長、停留秒數、滾動次數、開啟貼文數與主題間隔。 |
+| 🎨 漫畫控制台 | 太空小隊插畫、明亮配色、繁體中文／English，以及手機版面。 |
+
+## 🎨 控制台長這樣
+
+下圖使用全新的空白設定產生，沒有個人主題、帳號或瀏覽紀錄。
+
+![脆脆馴獸師控制台：自訂主題、瀏覽設定與執行紀錄](assets/ui-preview.png)
+
+## 🚀 快速啟航
+
+準備好 **Python 3.10+**、Playwright 的 Chromium，以及需要時可手動登入的 Threads 帳號。
+
+以下指令適用於 macOS／Linux：
 
 ```bash
+git clone https://github.com/LotusLu/threads-feed-trainer.git
+cd threads-feed-trainer
+
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -34,120 +51,133 @@ python -m playwright install chromium
 python threads_trainer.py
 ```
 
-啟動後會自動在預設瀏覽器開啟本機控制台。
+程式會自動開啟本機控制台，網址以 `http://127.0.0.1:` 開頭；實際連接埠由啟動時決定。
 
-### 使用方式
+完成安裝後，也能在專案目錄執行：
 
-1. 在控制台選擇語言。
-2. 選一個主題分類，例如「平靜與身心健康」、「學習與知識」或「科技與工具」。
-3. 視需要編輯主題清單，每行一個主題。
-4. 第一次使用時，按「登入/檢查帳號」，在 Chromium 視窗中手動完成 Threads/Instagram 登入。
-5. 登入完成後回到控制台，按「完成登入」關閉登入視窗。
-6. 調整停留秒數、滾動次數、開啟貼文數、冷卻秒數與總分鐘數。
-7. 按「開始」執行。需要中止時按「停止」。
+```bash
+bash run_threads_trainer.sh
+```
 
-### 設定說明
+## 🦖 第一次馴獸，五步就出發
 
-預設 Threads 搜尋 URL 模板是：
+1. **寫下喜好**：在「自訂主題」一行輸入一個你想看的內容。
+2. **登上飛船**：按「登入／檢查帳號」，在專用 Chromium 視窗中手動完成 Threads 登入。
+3. **收好登入視窗**：回到控制台按「完成登入」。登入狀態會留在專用 profile。
+4. **調整探索節奏**：設定總時間、每主題停留與其他參數。
+5. **開始瀏覽**：按「開始瀏覽」。想收工時按「停止」；想收起內容時按「隱藏內容」，瀏覽仍會繼續。
+
+### 想看看小隊現在逛到哪裡？
+
+按 **「顯示專用瀏覽器」** 即可：
+
+- 已有可見視窗時，叫回原本的專用瀏覽器。
+- 背景執行時，用**同一份 profile** 切換成可見視窗，保留目前頁面、捲動位置及登入工作階段，接著繼續瀏覽。
+- 閒置時，開啟同一個專用瀏覽器供你手動使用；按「關閉視窗」結束。
+
+導覽載入中可能需要等到安全切換點，按鈕會顯示「正在顯示…」。這次顯示視窗的操作不會修改你已保存的背景執行設定。
+
+## 🛠️ 調整探索節奏
+
+| 設定 | 預設值 | 說明 |
+| --- | --- | --- |
+| 總瀏覽時間 | 20 分鐘 | 設定這次探索的時間。頁面載入與目前主題的收尾可能讓實際時間稍長。 |
+| 每主題停留 | 35 秒 | 主題頁的停留設定；貼文閱讀與頁面載入另需時間。 |
+| 每主題滾動 | 7 次 | 每次滾動距離與間隔帶有隨機變化。 |
+| 開啟貼文 | 3 篇 | 短暫閱讀搜尋頁上的可見貼文；設為 `0` 就只瀏覽搜尋頁。 |
+| 主題間隔 | 8 秒 | 主題之間休息一下。 |
+| 在背景執行 | 關閉 | 開啟後以無視窗模式開始；需要時可再顯示專用瀏覽器。 |
+
+「進階設定」裡可調整搜尋 URL 模板，預設為：
 
 ```text
 https://www.threads.com/search?q={query}
 ```
 
-`{query}` 會被替換成 URL 編碼後的主題。如果 Threads 更改搜尋網址，可以在控制台調整這個模板。
+保留 `{query}`，工具會替換成經過 URL 編碼的主題。
 
-瀏覽器登入狀態保存在本機 `.browser-profile/`。如果你想清除登入狀態，刪除這個資料夾即可。控制台的上次使用內容保存在瀏覽器 `localStorage`，只留在你的電腦上。
+## 🔒 小隊的隱私收納箱
 
-### 隱私與安全
+| 本機資料 | 保存位置 | Git 狀態 |
+| --- | --- | --- |
+| 登入狀態與瀏覽器資料 | `.browser-profile/` | 已忽略 |
+| 自訂主題、草稿、上次執行設定與收合偏好 | `.trainer-settings.json` | 已忽略 |
+| 設定暫存檔 | `.trainer-settings.json.*` | 已忽略 |
+| 另存的執行日誌 | `*.log` | 已忽略 |
+| 虛擬環境與 Python 快取 | `.venv/`、`__pycache__/` | 已忽略 |
 
-Threads Feed Trainer 在你的電腦上執行，不會把主題、紀錄、登入狀態或密碼送到專案伺服器。登入是在專用 Chromium 視窗中由你手動完成。
+登入由你在 Threads 官方頁面手動完成，控制台不設帳密輸入欄位。程式會把搜尋主題送到 Threads 以載入搜尋頁；主題設定、執行紀錄與 profile 不會上傳到本專案的伺服器。
 
-請保守使用。高頻率自動化可能看起來不正常，也可能違反平台條款。本專案刻意避免自動互動行為，但你仍需自行負責使用方式。
+收合功能只是隱藏畫面內容，**不是加密或密碼鎖**。上述本機資料仍可能含有私人內容，請不要把它們打包分享或強制加入 Git。若要清除登入狀態，請先關閉工具及專用瀏覽器，再刪除 `.browser-profile/`。
 
-### 開發
+## ❓ 小隊常見問答
 
-執行測試：
+<details>
+<summary><strong>「恢復上次執行」和自動儲存有什麼不同？</strong></summary>
 
-```bash
-python -m unittest discover -s tests
-```
+草稿記住你現在正在編輯的內容；「恢復上次執行」還原上次通過檢查並啟動瀏覽時的整組設定。打字、登入或收合區塊都不會覆蓋這份執行記錄。第一次啟動瀏覽前，恢復按鈕會停用。
 
-### 專案範圍
+</details>
 
-這是一個小型本機自動化工具，不是 Threads API client，也不是成長、導流或互動機器人。預期行為只包含開啟主題頁、滾動、短暫閱讀可見貼文，以及顯示本機執行紀錄。
+<details>
+<summary><strong>重新啟動或更換連接埠，設定還會在嗎？</strong></summary>
 
-## English
+會。設定由本機 `.trainer-settings.json` 保存，不依賴控制台的連接埠。若設定檔無法讀取，程式會停止寫入以保護原始內容，修復後可按「重試」。
 
-Threads Feed Trainer is a local Python utility that helps you use intentionally chosen topics to shape recent Threads browsing signals away from internet anxiety, malicious information, emotional manipulation, and accidental recommendation loops.
+舊版瀏覽器 `localStorage` 只能從相同來源（包含連接埠）遷移，無法自動找回其他舊連接埠的資料；也不會重新套用內建範例。
 
-It opens Threads search pages in a dedicated Chromium profile, slowly scrolls through selected topics, and can briefly open visible posts for reading. The tool is designed for low-frequency, transparent, manually started local use. It does not like, comment, repost, follow accounts, scrape private data, or record or submit your account password.
+</details>
 
-### Features
+<details>
+<summary><strong>更新後，重新整理頁面就好了嗎？</strong></summary>
 
-- Local dashboard served on `127.0.0.1`
-- Traditional Chinese / English UI, with first launch inferred from browser language
-- Common topic categories that can be applied and edited
-- Last-used category, topics, and session settings saved locally
-- Dedicated persistent Chromium profile for Threads login state
-- Configurable total duration, dwell time, scroll count, posts to open, and cooldown
-- Human-paced browsing with randomized scroll distances and pauses
-- Local runtime logs in the dashboard
-- No automated engagement actions
+單純的版面更新可重新整理控制台。若更新了 Python 程式或瀏覽器控制功能，請先停止目前工作，再關閉並重新啟動工具；登入狀態與已儲存的自訂設定會保留。
 
-### Requirements
+</details>
 
-- Python 3.10+
-- Chromium installed through Playwright
-- A Threads account, if Threads requires login in your region or session
+<details>
+<summary><strong>它會幫我按讚、留言或追蹤嗎？</strong></summary>
 
-### Installation
+不會。工具的範圍是開啟主題頁、滾動與閱讀可見貼文，不包含按讚、留言、轉發、追蹤或擷取私人資料。請保守使用，並自行確認平台的使用規範。
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -m playwright install chromium
-python threads_trainer.py
-```
+</details>
 
-The command opens the local dashboard in your default browser.
-
-### Usage
-
-1. Choose the dashboard language.
-2. Select a topic category, such as Calm and wellbeing, Learning, or Technology.
-3. Edit the topic list if needed, one topic per line.
-4. On first use, click Login / check account and sign in manually in the Chromium window.
-5. Return to the dashboard and click Login complete to close the login window.
-6. Adjust dwell time, scroll count, posts to open, cooldown, and total minutes.
-7. Click Start. Click Stop whenever you want to end the session.
-
-### Configuration
-
-The default Threads search URL template is:
-
-```text
-https://www.threads.com/search?q={query}
-```
-
-`{query}` is replaced with the URL-encoded topic. If Threads changes its search route, update the template in the dashboard.
-
-The browser login profile is stored locally in `.browser-profile/`. Remove that directory if you want to clear the saved login session. The dashboard's last-used content is stored in browser `localStorage` and remains on your machine.
-
-### Privacy and Safety
-
-Threads Feed Trainer runs on your computer. It does not send your topics, logs, login state, or password to any project server. Login is completed manually by you in a dedicated Chromium window.
-
-Use conservative settings. High-volume automation can look abnormal to platforms and may violate product terms. This project intentionally avoids automated engagement actions, but you are responsible for how you use it.
-
-### Development
-
-Run the test suite with:
+## 🧰 開發小角落
 
 ```bash
 python -m unittest discover -s tests
+python -m py_compile threads_trainer.py
 ```
 
-### Project Scope
+| 檔案 | 負責的事 |
+| --- | --- |
+| `threads_trainer.py` | 本機 HTTP 服務、設定保存、專用瀏覽器與瀏覽流程。 |
+| `trainer_ui.html` | 漫畫控制台、語言切換與前端互動。 |
+| `assets/space-crew.webp` | 恐龍、橘貓與機器人的太空小隊插畫。 |
+| `assets/ui-preview.png` | 使用空白設定製作的公開介面預覽。 |
+| `tests/test_threads_trainer.py` | 設定、保存、瀏覽器控制與 HTTP 行為測試。 |
 
-This is a small local automation tool, not a Threads API client and not a growth or engagement bot. The intended behavior is limited to opening topic pages, scrolling, briefly reading visible posts, and showing local execution logs.
+介面的插畫已內嵌在 HTML 中，啟動時不需要另外提供圖片服務，也不依賴外部字型服務。
+
+## 🌍 English quick guide
+
+**脆脆馴獸師 / Threads Feed Trainer** is a playful, local Python dashboard for browsing Threads topics you choose yourself. It opens search pages, scrolls slowly and can briefly read visible posts. It does not guarantee changes to recommendations.
+
+- Enter your own topics, one per line. There are no built-in topic presets.
+- Use **Login / check account**, sign in manually, then click **Login complete**.
+- Adjust the session settings and click **Start browsing**. **Stop** ends the session.
+- **Show dedicated browser** reveals the same persistent Chromium profile used for login. Background sessions switch to a visible context while preserving the current page and session data.
+- Drafts and the last-run checkpoint are separate. **Restore last run** restores the last accepted browsing configuration.
+- Hide topics and activity independently or together; visibility preferences survive reloads.
+
+Install Python 3.10+, create and activate a virtual environment, install `requirements.txt`, run `python -m playwright install chromium`, then `python threads_trainer.py`.
+
+Login data stays in `.browser-profile/`; drafts and preferences stay in `.trainer-settings.json`. Both are ignored by Git. Search queries are sent to Threads, but this project does not upload your settings, logs or browser profile to a project server. Hiding content is a visual convenience, not encryption. There are no automated likes, comments, reposts or follows.
+
+---
+
+<div align="center">
+
+🦖 **恐龍負責可愛，喜歡什麼由你決定。** 🐈 🤖
+
+</div>
