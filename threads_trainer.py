@@ -11,7 +11,9 @@ import socket
 import threading
 import time
 import webbrowser
+import uuid
 from dataclasses import dataclass
+from trainer_content import (ContentStore, canonical_post, classify, keywords, fingerprint, compare_reports, EXTRACT_POSTS_JS)
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -36,7 +38,7 @@ VISIBLE_TEXT_LIMIT = 180
 SETTINGS_PATH = Path(__file__).resolve().parent / ".trainer-settings.json"
 NUMERIC_FIELDS = {"secondsPerTopic": (10, 600), "scrollsPerTopic": (1, 80),
                   "postsPerTopic": (0, 20), "cooldownSeconds": (0, 120),
-                  "sessionMinutes": (1, 240)}
+                  "sessionMinutes": (1, 240), "feedSampleSize": (1, 50)}
 
 
 def sanitize_snapshot(value: object) -> dict[str, object]:
@@ -44,8 +46,8 @@ def sanitize_snapshot(value: object) -> dict[str, object]:
         raise ValueError("設定必須是物件。")
     result: dict[str, object] = {}
     for key, item in value.items():
-        if key in {"topics", "urlTemplate"}:
-            if not isinstance(item, str) or len(item) > (50000 if key == "topics" else 2048):
+        if key in {"topics", "urlTemplate", "includeKeywords", "excludeKeywords"}:
+            if not isinstance(item, str) or len(item) > (50000 if key in {"topics", "includeKeywords", "excludeKeywords"} else 2048):
                 raise ValueError("設定文字過長或格式錯誤。")
             result[key] = item
         elif key in NUMERIC_FIELDS:
@@ -57,7 +59,7 @@ def sanitize_snapshot(value: object) -> dict[str, object]:
             elif abs(item) > 1000000:
                 raise ValueError("數字設定過大。")
             result[key] = item
-        elif key == "headless":
+        elif key in {"headless", "feedCheck"}:
             if not isinstance(item, bool):
                 raise ValueError("背景模式格式錯誤。")
             result[key] = item
@@ -75,7 +77,7 @@ class SettingsStore:
         self.lock = threading.Lock()
         self.data = {"version": 1, "draft": None, "lastRun": None,
                      "draftSavedAt": None, "lastRunAt": None,
-                     "ui": {"topicsCollapsed": False, "logCollapsed": False}}
+                     "ui": {"topicsCollapsed": False, "logCollapsed": False, "reportsCollapsed": False}}
         self.client_sequences: dict[str, int] = {}
         self.error: str | None = None
         self._load()
@@ -108,7 +110,9 @@ class SettingsStore:
     def _sanitize_ui(value: object) -> dict[str, bool]:
         if not isinstance(value, dict) or any(not isinstance(item, bool) for item in value.values()):
             raise ValueError("顯示設定格式錯誤。")
-        return {key: value.get(key, False) for key in ("topicsCollapsed", "logCollapsed")}
+        result = {key: value.get(key, False) for key in ("topicsCollapsed", "logCollapsed")}
+        result["reportsCollapsed"] = value.get("reportsCollapsed", result["topicsCollapsed"] and result["logCollapsed"])
+        return result
 
     def save(self, draft: object = None, *, checkpoint: bool = False, ui: object = None, draft_present: bool = True, client_id: object = None, sequence: object = None) -> dict[str, object]:
         if client_id is not None or sequence is not None:
@@ -155,6 +159,7 @@ class SettingsStore:
 
 
 STORE = SettingsStore()
+CONTENT = ContentStore(Path(__file__).with_name(".trainer-content.json"))
 
 
 @dataclass(frozen=True)
@@ -167,6 +172,10 @@ class TrainerSettings:
     cooldown_seconds: int
     session_minutes: int
     headless: bool
+    include_keywords: str = ""
+    exclude_keywords: str = ""
+    feed_check: bool = True
+    feed_sample_size: int = 20
 
 
 class StopSignal:
@@ -192,6 +201,7 @@ class AppState:
         self.worker_thread: threading.Thread | None = None
         self.stop_signal: StopSignal | None = None
         self.running = False
+        self.browse_stopped = False
         self.mode = "idle"
         self.current_url = THREADS_HOME
         self.browser_control: BrowserControl | None = None
@@ -204,7 +214,7 @@ class AppState:
 
     def snapshot(self) -> dict[str, object]:
         with self.lock:
-            return {"running": self.running, "mode": self.mode, "currentUrl": self.current_url, "browser": dict(self.browser), "logs": list(self.logs)}
+            return {"running": self.running, "mode": self.mode, "currentUrl": self.current_url, "browser": dict(self.browser), "stopRequested": bool(self.browse_stopped or (self.mode == "browsing" and self.stop_signal and self.stop_signal.is_set())), "logs": list(self.logs), "stats": dict(getattr(self, "stats", {})), **CONTENT.snapshot()}
 
     def set_current_url(self, url: str) -> None:
         try:
@@ -227,35 +237,23 @@ class AppState:
         with self.lock:
             self.running = running
             if not running:
+                if self.mode == "browsing":
+                    self.browse_stopped = bool(self.stop_signal and self.stop_signal.is_set())
                 self.mode = "idle"
 
 
 def collect_post_urls(raw_hrefs: list[str], base_url: str, limit: int) -> list[str]:
-    urls: list[str] = []
-    seen: set[str] = set()
-    base_host = urlparse(base_url).netloc
-
+    urls = []
+    seen = set()
+    if limit <= 0:
+        return urls
     for href in raw_hrefs:
-        absolute_url = urljoin(base_url, href)
-        parsed = urlparse(absolute_url)
-        if parsed.scheme not in {"http", "https"}:
-            continue
-        if parsed.netloc != base_host:
-            continue
-        if POST_PATH_MARKER not in parsed.path:
-            continue
-
-        clean_url = urlunparse(
-            (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", "")
-        )
-        if clean_url in seen:
-            continue
-
-        seen.add(clean_url)
-        urls.append(clean_url)
-        if len(urls) >= limit:
-            break
-
+        post = canonical_post(href, base_url)
+        if post and post[0] not in seen:
+            seen.add(post[0])
+            urls.append(post[1])
+            if len(urls) >= limit:
+                break
     return urls
 
 
@@ -444,6 +442,73 @@ class ThreadsTrainer:
         self.control = control or BrowserControl()
         self.on_browser_state = on_browser_state or (lambda status, headless, error: None)
         self.browser: ManagedBrowser | None = None
+        self.content = CONTENT
+        self.deadline = float("inf")
+        self.stats = {key: 0 for key in ("candidates", "matched", "opened", "read", "duplicates", "excluded", "unknown", "errors")}
+        self.considered: set[tuple[str, str]] = set()
+        self.read_ids: set[str] = set()
+        self.run_id = uuid.uuid4().hex
+        self.before = None
+        self.history_warning = False
+        self.final_ids: set[str] = set()
+
+    def active(self, deadline: float | None = None) -> bool:
+        return not self.stop_signal.is_set() and time.monotonic() < min(self.deadline, deadline if deadline is not None else float("inf"))
+
+    def publish(self) -> None:
+        with STATE.lock:
+            STATE.stats = dict(self.stats)
+
+    def rules(self, topic: str | None = None) -> tuple[list[str], list[str]]:
+        return (keywords(self.settings.include_keywords) or keywords(topic if topic is not None else "\n".join(self.settings.topics)), keywords(self.settings.exclude_keywords))
+
+    def timeout(self, deadline: float) -> int:
+        return max(1, min(8000, int((min(deadline, self.deadline) - time.monotonic()) * 1000)))
+
+    async def navigate(self, browser, url: str, deadline: float) -> bool:
+        if not self.active(deadline):
+            return False
+        await browser.show_if_requested()
+        if not self.active(deadline):
+            return False
+        try:
+            await browser.page.goto(url, wait_until="domcontentloaded", timeout=self.timeout(deadline))
+            return self.active(deadline)
+        except Exception as exc:
+            self.stats["errors"] += 1
+            self.log("頁面載入未完成：可能逾時或頁面已變更，繼續下一個可用步驟。")
+            return False
+
+    async def cards(self, browser, deadline: float, wait: bool = False) -> list[dict]:
+        until = min(deadline, self.deadline, time.monotonic() + (4 if wait else 0.1))
+        result = []
+        while self.active(until):
+            await browser.show_if_requested()
+            try:
+                raw = await browser.page.evaluate(EXTRACT_POSTS_JS)
+                result = []
+                for card in raw:
+                    post = canonical_post(card.get("url"))
+                    if post:
+                        result.append({**card, "id": post[0], "url": post[1]})
+                if any(card.get("text", "").strip() for card in result) or not wait:
+                    return result
+            except Exception:
+                self.stats["errors"] += 1
+                return []
+            await self.pause(0.2, until)
+        return result
+
+    async def pause(self, seconds: float, deadline: float) -> bool:
+        target = time.monotonic() + seconds
+        for _ in range(max(1, int(seconds * 10 + .999))):
+            if not self.active(deadline) or time.monotonic() >= target:
+                break
+            if self.browser is not None:
+                await self.browser.show_if_requested()
+            await asyncio.sleep(min(0.1, max(0, target-time.monotonic()), max(0, min(deadline,self.deadline)-time.monotonic())))
+        return self.active(deadline) and time.monotonic() >= target
+
 
     async def run(self) -> None:
         if async_playwright is None:
@@ -454,6 +519,14 @@ class ThreadsTrainer:
 
         PROFILE_DIR.mkdir(parents=True, exist_ok=True)
         deadline = time.monotonic() + self.settings.session_minutes * 60
+        self.deadline = deadline
+        self.publish()
+        try:
+            self.content.start_run()
+        except OSError as exc:
+            self.log(str(exc))
+        if self.content.error:
+            self.log(self.content.error)
 
         async with async_playwright() as playwright:
             self.browser = ManagedBrowser(playwright, PROFILE_DIR, self.settings.headless,
@@ -461,138 +534,333 @@ class ThreadsTrainer:
                                           self.log, self.stop_signal)
             try:
                 await self.browser.start()
-                await self._cycle_topics(self.browser, deadline)
+                # Both samples are inside the wall-clock budget. Reserve at most 15 s
+                # for the final sample; baseline is capped at 15 s too.
+                reserve = min(15, self.settings.session_minutes * 60 / 5) if self.settings.feed_check else 0
+                if self.settings.feed_check and self.active():
+                    self.before = await self._sample_feed(self.browser, "before", min(deadline-reserve, time.monotonic()+15))
+                await self._cycle_topics(self.browser, deadline-reserve)
+                if self.settings.feed_check and self.active():
+                    await self._sample_feed(self.browser, "after", deadline)
+                self.publish()
             finally:
                 await self.browser.close()
 
     async def _cycle_topics(self, browser, deadline: float) -> None:
-        cycle_count = 0
-        self.log("瀏覽器已啟動。如果尚未登入 Threads，請在視窗中手動登入。")
-
-        while not self.stop_signal.is_set() and time.monotonic() < deadline:
+        self.log("以本機關鍵字規則選讀；不會自動按讚、追蹤或送出回饋。")
+        while self.active(deadline):
             topics = self.settings.topics[:]
             random.shuffle(topics)
-            cycle_count += 1
-            self.log(f"開始第 {cycle_count} 輪，共 {len(topics)} 個主題。")
-
             for topic in topics:
-                if self.stop_signal.is_set() or time.monotonic() >= deadline:
+                if not self.active(deadline):
                     break
-
-                await browser.show_if_requested()
-                url = self._topic_url(topic)
+                topic_deadline = min(deadline, time.monotonic() + self.settings.seconds_per_topic)
                 self.log(f"開啟主題：{topic}")
-                try:
-                    await browser.page.goto(url, wait_until="domcontentloaded", timeout=45_000)
-                except PlaywrightTimeoutError:
-                    self.log(f"載入逾時，略過：{topic}")
-                    continue
-
-                await browser.show_if_requested()
-                await self._browse_topic(browser, topic)
-                await self._cooldown()
-
-        self.log("流程已結束。")
+                if await self.navigate(browser, self._topic_url(topic), topic_deadline):
+                    await self._browse_topic(browser, topic, topic_deadline)
+                await self.pause(self.settings.cooldown_seconds, deadline)
+        self.log("主題瀏覽已結束。")
 
     def _topic_url(self, topic: str) -> str:
-        encoded_query = quote_plus(topic)
         template = self.settings.url_template.strip() or DEFAULT_URL_TEMPLATE
         if "{query}" not in template:
             template = DEFAULT_URL_TEMPLATE
-        return template.format(query=encoded_query)
+        return template.format(query=quote_plus(topic))
 
-    async def _browse_topic(self, browser, topic: str) -> None:
-        await self._log_page_diagnostics(browser.page, topic, "搜尋頁")
-        await browser.show_if_requested()
-        seconds_left = self.settings.seconds_per_topic
+    async def _browse_topic(self, browser, topic: str, deadline: float | None = None) -> None:
+        deadline = min(self.deadline, deadline or time.monotonic()+self.settings.seconds_per_topic)
+        opened = 0
+        self.current_topic = topic
+        started_stats = dict(self.stats)
+        previewed_ids: set[str] = set()
+        includes, excludes = self.rules(topic)
         for index in range(self.settings.scrolls_per_topic):
-            if self.stop_signal.is_set():
-                return
-
+            if not self.active(deadline):
+                break
+            opened_on_view = False
+            representative = None
+            for card in await self.cards(browser, deadline, wait=True):
+                if not self.active(deadline):
+                    break
+                post_id = card['id']
+                entry = self.content.entry(post_id)
+                can_preview = post_id not in previewed_ids and bool(card.get('text', '').strip())
+                if can_preview and representative is None:
+                    representative = (card, '檢視搜尋結果')
+                if entry or post_id in self.read_ids:
+                    if can_preview and representative and representative[0]['id'] == post_id:
+                        representative = (card, '檢視搜尋結果／已讀略過')
+                    self.stats['duplicates'] += 1
+                    continue
+                if (topic, post_id) in self.considered:
+                    continue
+                self.stats['candidates'] += 1
+                result = classify(card.get('text',''), includes, excludes, entry.get('feedback'))
+                if card.get('sponsored'):
+                    result = 'excluded'
+                if result in {'excluded', 'unknown'}:
+                    self.stats[result] += 1
+                if result != 'unknown':
+                    self.considered.add((topic, post_id))
+                if result != 'matched':
+                    if can_preview and representative and representative[0]['id'] == post_id:
+                        representative = (card, '檢視搜尋結果／未符合主題')
+                    continue
+                self.stats['matched'] += 1
+                if opened >= self.settings.posts_per_topic:
+                    continue
+                opened_on_view = True
+                if await self._read_card(browser, card, includes, excludes, deadline):
+                    self.stats['read'] += 1
+                opened += 1
+                self.publish()
+            if not opened_on_view and representative:
+                card, label = representative
+                self._post_activity(card, label)
+                previewed_ids.add(card['id'])
+            if not self.active(deadline):
+                break
+            self.log(f"{summarize_visible_text(topic, 60)}：檢查第 {index + 1}/{self.settings.scrolls_per_topic} 個畫面，接著向下瀏覽。")
             await browser.show_if_requested()
-            scroll_distance = random.randint(550, 950)
-            await browser.page.mouse.wheel(0, scroll_distance)
-            self.log(f"{topic}：滾動 {index + 1}/{self.settings.scrolls_per_topic}")
+            await browser.page.mouse.wheel(0, 650)
+            await self.pause(1.5, deadline)
+        self.log(f"{summarize_visible_text(topic, 60)}：本次主題完成閱讀 {self.stats['read'] - started_stats['read']} 篇，符合 {self.stats['matched'] - started_stats['matched']} 篇，略過已讀 {self.stats['duplicates'] - started_stats['duplicates']} 次。")
+        self.publish()
 
-            if index == 0:
-                await self._open_topic_posts(browser, topic)
-
-            pause = min(seconds_left, random.randint(3, 7))
-            if pause > 0:
-                await self._sleep_interruptibly(pause)
-                seconds_left -= pause
-
-        if seconds_left > 0:
-            self.log(f"{topic}：停留閱讀 {seconds_left} 秒")
-            await self._sleep_interruptibly(seconds_left)
-
-    async def _open_topic_posts(self, browser, topic: str) -> None:
-        if self.settings.posts_per_topic <= 0:
-            return
-
-        search_url = browser.page.url
-        post_urls = await self._collect_visible_post_urls(browser.page, self.settings.posts_per_topic)
-        if not post_urls:
-            self.log(f"{topic}：沒有找到可開啟的貼文連結，繼續瀏覽搜尋頁。")
-            return
-
-        self.log(f"{topic}：找到 {len(post_urls)} 篇貼文，開始逐篇閱讀。")
-        for index, post_url in enumerate(post_urls, start=1):
-            if self.stop_signal.is_set():
-                return
-
+    async def _wait_for_post_detail(self, browser, post_id: str, deadline: float,
+                                    timeout: float = 4.0) -> dict | None:
+        """SPA clicks may leave hydrated search cards visible before URL commit."""
+        until = min(self.deadline, deadline, time.monotonic() + timeout)
+        while self.active(until):
             await browser.show_if_requested()
-            self.log(f"{topic}：開啟貼文 {index}/{len(post_urls)}")
-            try:
-                await browser.page.goto(post_url, wait_until="domcontentloaded", timeout=45_000)
-                await browser.show_if_requested()
-                await self._log_page_diagnostics(browser.page, topic, "貼文")
-                await browser.show_if_requested()
-                await browser.page.mouse.wheel(0, random.randint(280, 620))
-                await self._sleep_interruptibly(random.randint(5, 11))
-            except PlaywrightTimeoutError:
-                self.log(f"{topic}：貼文載入逾時，略過。")
+            if not self.active(until):
+                break
+            current = canonical_post(browser.page.url)
+            if current and current[0] == post_id:
+                cards = await self.cards(browser, until, wait=False)
+                # A reveal can replace the page; check the current owner again.
+                current = canonical_post(browser.page.url)
+                if current and current[0] == post_id:
+                    detail = next((item for item in cards if item['id'] == post_id and item.get('text', '').strip()), None)
+                    if detail:
+                        return detail
+            await self.pause(.1, until)
+        return None
 
-        await browser.show_if_requested()
+    def _post_activity(self, card: dict, message: str, text: str | None = None) -> None:
+        """Only a bounded own-post preview is logged; never whole-page/account text."""
+        canonical = canonical_post(card.get('url', ''))
+        url = canonical[1] if canonical else '（貼文網址無法確認）'
+        topic = summarize_visible_text(getattr(self, 'current_topic', '目前主題'), 60)
+        preview = summarize_visible_text(text if text is not None else card.get('text', ''), 180)
+        self.log(f"{topic}：{message} · {url}" + (f" · {preview}" if preview else ''))
+
+    async def _read_card(self, browser, card, includes, excludes, deadline) -> bool:
+        def skip(reason: str) -> bool:
+            self._post_activity(card, f"略過：{reason}")
+            # Stop/budget expiry is an expected limit, not an operation error.
+            if reason not in {'已收到停止要求', '本主題或總時間已用完', '正文不再符合包含／排除關鍵字規則'}:
+                self.stats['errors'] += 1
+            return False
+
+        def limit_reason() -> str:
+            return '已收到停止要求' if self.stop_signal.is_set() else '本主題或總時間已用完'
+
+        if not self.active(deadline):
+            return skip(limit_reason())
+        self._post_activity(card, '準備開啟貼文')
+        read = False
+        search_url = None
+        scroll = None
+        stage = '開啟貼文'
         try:
-            await browser.page.goto(search_url, wait_until="domcontentloaded", timeout=45_000)
-        except PlaywrightTimeoutError:
-            self.log(f"{topic}：返回搜尋頁逾時。")
+            await browser.show_if_requested()
+            search_url = browser.page.url
+            scroll = await browser.page.evaluate("() => ({x:scrollX,y:scrollY})")
+            # Click only an actual rendered permalink from the current card.
+            locator = browser.page.locator('a[href]')
+            clicked = False
+            for i in range(await locator.count()):
+                if not self.active(deadline):
+                    return skip(limit_reason())
+                anchor = locator.nth(i)
+                href = await anchor.get_attribute('href')
+                post = canonical_post(href or '', browser.page.url)
+                if post and post[0] == card['id'] and await anchor.is_visible():
+                    await anchor.click(timeout=self.timeout(deadline))
+                    clicked = True
+                    break
+            if not clicked:
+                return skip('畫面上的貼文連結已消失或無法點擊')
+            self.stats['opened'] += 1
+            self._post_activity(card, '已開啟貼文，等待正文')
+            stage = '等待貼文正文'
+            detail = await self._wait_for_post_detail(browser, card['id'], deadline)
+            if not self.active(deadline):
+                return skip(limit_reason())
+            current = canonical_post(browser.page.url)
+            if not current or current[0] != card['id']:
+                return skip('開啟後的網址不是這篇貼文')
+            if not detail:
+                return skip('正文尚未載入，或無法確認這篇貼文的內容')
+            entry = self.content.entry(card['id'])
+            if classify(detail['text'], includes, excludes, entry.get('feedback')) != 'matched':
+                self.stats['excluded'] += 1
+                return skip('正文不再符合包含／排除關鍵字規則')
+            dwell = min(14, max(4, len(detail['text']) / 35))
+            self._post_activity(card, f"正文已就緒，開始閱讀，預計 {dwell:.1f} 秒", detail['text'])
+            stage = '閱讀貼文'
+            if await self.pause(dwell, deadline):
+                try:
+                    self.content.read(card['url'])
+                except OSError:
+                    if not self.history_warning:
+                        self.log('本機閱讀紀錄暫時無法寫入；本次仍會避開已讀貼文。請查看瀏覽成果的統計與比較方式。')
+                        self.history_warning = True
+                self.read_ids.add(card['id'])
+                read = True
+                self._post_activity(card, '完成閱讀', detail['text'])
+            else:
+                return skip(limit_reason())
+        except Exception:
+            return skip(f'{stage}未完成，可能逾時或頁面內容已變更')
+        finally:
+            if search_url and scroll is not None and self.active(deadline):
+                try:
+                    if await self.navigate(browser, search_url, deadline):
+                        await browser.page.evaluate("p => scrollTo(p.x,p.y)", scroll)
+                except Exception:
+                    self.stats['errors'] += 1
+                    self.log('返回搜尋頁時未能恢復捲動位置，將繼續檢查目前畫面。')
+        return read
+
+    async def _verify_for_you(self, browser, deadline: float) -> bool:
+        # A homepage URL alone does not establish feed identity or login.
+        names = {"For you", "For You", "為你推薦", "为你推荐"}
+        until = min(deadline, time.monotonic()+4)
+        while self.active(until):
+            await browser.show_if_requested()
+            for role in ('tab', 'button', 'link'):
+                for name in names:
+                    tabs = browser.page.get_by_role(role, name=name, exact=True)
+                    for i in range(await tabs.count()):
+                        tab = tabs.nth(i)
+                        if not await tab.is_visible():
+                            continue
+                        if await tab.get_attribute('aria-selected') == 'true' or await tab.get_attribute('aria-current') in {'page','true'}:
+                            # Reject explicit login gates even if navigation is present.
+                            import re
+                            for gate_role in ('button', 'link'):
+                                gates = browser.page.get_by_role(gate_role, name=re.compile(r'^(Log in|Log in to Threads|Sign in|登入|登录|登入 Threads)$', re.I))
+                                for gate_index in range(await gates.count()):
+                                    if await gates.nth(gate_index).is_visible():
+                                        return False
+                            # Require affirmative account navigation, without opening it.
+                            # Public profile links / arbitrary author names are insufficient.
+                            profile_names = ('Profile', '個人檔案', '個人主頁', '个人主页', '個人資料', '个人资料', 'プロフィール')
+
+                            async def is_account_link(profile) -> bool:
+                                if not await profile.is_visible() or await profile.evaluate("el => !!el.closest('article,[role=\"article\"]')"):
+                                    return False
+                                try:
+                                    href = await profile.get_attribute('href')
+                                    parsed = urlparse(urljoin(browser.page.url, href or ''))
+                                    return (parsed.scheme in {'http', 'https'} and parsed.hostname in THREADS_HOSTS
+                                            and not parsed.username and not parsed.password
+                                            and parsed.port in {None, 80, 443}
+                                            and bool(re.fullmatch(r'/@[^/\s]+/?', parsed.path)))
+                                except (ValueError, TypeError):
+                                    return False
+
+                            for profile_name in profile_names:
+                                profiles = browser.page.get_by_role('link', name=profile_name, exact=True)
+                                for profile_index in range(await profiles.count()):
+                                    if await is_account_link(profiles.nth(profile_index)):
+                                        return True
+                            # Threads can expose both SVG aria-label and <title> in
+                            # the link's accessible name. Require the observed named
+                            # visible profile icon, not any arbitrary author link.
+                            icon_links = browser.page.locator('a[href]:has(svg[role="img"][aria-label])')
+                            for profile_index in range(await icon_links.count()):
+                                profile = icon_links.nth(profile_index)
+                                if not await is_account_link(profile):
+                                    continue
+                                icons = profile.locator('svg[role="img"][aria-label]')
+                                for icon_index in range(await icons.count()):
+                                    icon = icons.nth(icon_index)
+                                    if await icon.is_visible() and await icon.get_attribute('aria-label') in profile_names:
+                                        return True
+                            return False
+                        await tab.click(timeout=self.timeout(until))
+            await self.pause(.2, until)
+        return False
+
+    async def _sample_feed(self, browser, phase: str, deadline: float) -> dict:
+        includes, excludes = self.rules()
+        report = {'runId': self.run_id, 'phase': phase, 'time': datetime.now(timezone.utc).isoformat(), 'fingerprint': fingerprint(includes, excludes),
+                  'verifiedForYou': False, 'status': 'unavailable', 'sampled': 0, 'classifiable': 0, 'matched': 0, 'unknown': 0,
+                  'ads': 0, 'overlap': 0, 'target': self.settings.feed_sample_size, 'rate': None, 'delta': None, 'ids': []}
+        observed = set()
+        try:
+            if not await self.navigate(browser, THREADS_HOME, deadline) or not await self._verify_for_you(browser, deadline):
+                report['reason'] = '無法確認「為你推薦」與個人檔案導覽登入證據 / Verified For You and account navigation unavailable'
+            else:
+                report['verifiedForYou'] = True
+                while self.active(deadline) and report['sampled'] < self.settings.feed_sample_size:
+                    for card in await self.cards(browser, deadline, wait=True):
+                        if card['id'] in observed:
+                            continue
+                        observed.add(card['id'])
+                        if card.get('sponsored'):
+                            report['ads'] += 1
+                            continue
+                        if phase == 'after' and card['id'] in self.final_ids:
+                            report['overlap'] += 1
+                            continue
+                        report['ids'].append(card['id'])
+                        report['sampled'] += 1
+                        # Reports deliberately ignore local positive/negative overrides:
+                        # comparable rates use the same text rules in both phases.
+                        outcome = classify(card.get('text',''), includes, excludes)
+                        if outcome == 'unknown':
+                            report['unknown'] += 1
+                        else:
+                            report['classifiable'] += 1
+                            report['matched'] += int(outcome == 'matched')
+                        if report['sampled'] >= self.settings.feed_sample_size:
+                            break
+                    if self.active(deadline) and report['sampled'] < self.settings.feed_sample_size:
+                        await browser.show_if_requested()
+                        await browser.page.mouse.wheel(0, 650)
+                        await self.pause(.5, deadline)
+                report['status'] = 'complete' if report['sampled'] >= self.settings.feed_sample_size else 'partial'
+                if report['classifiable']:
+                    report['rate'] = round(100*report['matched']/report['classifiable'], 1)
+                report['lowSample'] = report['classifiable'] < 5
+            if phase == 'before':
+                self.final_ids = set(report['ids'])
+            else:
+                report['delta'] = compare_reports(self.before, report)
+        except Exception as exc:
+            report['status'] = 'unavailable'
+            report['reason'] = type(exc).__name__
+            self.stats['errors'] += 1
+        if self.stop_signal.is_set():
+            report['status'] = 'stopped'
+            report['delta'] = None
+        try:
+            self.content.report(phase, report)
+        except OSError as exc:
+            self.log(str(exc))
+        self.log(f"{phase} 首頁抽樣：{report['status']}，{report['sampled']} 篇；僅為關鍵字代理指標，非演算法效果證明。")
+        return report
 
     async def _collect_visible_post_urls(self, page, limit: int) -> list[str]:
-        raw_hrefs = await page.locator("a[href]").evaluate_all(
-            "(links) => links.map((link) => link.href || link.getAttribute('href') || '')"
-        )
-        return collect_post_urls(raw_hrefs, page.url, limit)
-
-    async def _log_page_diagnostics(self, page, topic: str, label: str) -> None:
-        try:
-            title = await page.title()
-            text = await page.locator("body").inner_text(timeout=5_000)
-        except PlaywrightTimeoutError:
-            self.log(f"{topic}：{label} 診斷逾時。")
-            return
-
-        summary = summarize_visible_text(text)
-        self.log(f"{topic}：{label} URL {page.url}")
-        if title:
-            self.log(f"{topic}：{label} 標題 {title}")
-        if summary:
-            self.log(f"{topic}：{label} 可見內容 {summary}")
-
-    async def _cooldown(self) -> None:
-        if self.settings.cooldown_seconds <= 0:
-            return
-        self.log(f"冷卻 {self.settings.cooldown_seconds} 秒")
-        await self._sleep_interruptibly(self.settings.cooldown_seconds)
+        cards = await page.evaluate(EXTRACT_POSTS_JS)
+        return collect_post_urls([card['url'] for card in cards], page.url, limit)
 
     async def _sleep_interruptibly(self, seconds: int) -> None:
-        for _ in range(seconds * 10):
-            if self.stop_signal.is_set():
-                return
-            if self.browser is not None:
-                await self.browser.show_if_requested()
-            await asyncio.sleep(0.1)
+        await self.pause(seconds, self.deadline)
 
 
 STATE = AppState()
@@ -618,6 +886,10 @@ def parse_settings(payload: dict[str, object]) -> TrainerSettings:
         cooldown_seconds=int(payload.get("cooldownSeconds", 8)),
         session_minutes=int(payload.get("sessionMinutes", 20)),
         headless=bool(payload.get("headless", False)),
+        include_keywords=str(payload.get("includeKeywords", "")),
+        exclude_keywords=str(payload.get("excludeKeywords", "")),
+        feed_check=payload.get("feedCheck", True),
+        feed_sample_size=int(payload.get("feedSampleSize", 20)),
     )
 
     if settings.seconds_per_topic < 10:
@@ -632,7 +904,7 @@ def parse_settings(payload: dict[str, object]) -> TrainerSettings:
         raise ValueError("總分鐘數至少 1 分鐘。")
 
     for key, (minimum, maximum) in NUMERIC_FIELDS.items():
-        if not minimum <= int(payload.get(key, {"secondsPerTopic": 35, "scrollsPerTopic": 7, "postsPerTopic": 3, "cooldownSeconds": 8, "sessionMinutes": 20}[key])) <= maximum:
+        if not minimum <= int(payload.get(key, {"secondsPerTopic": 35, "scrollsPerTopic": 7, "postsPerTopic": 3, "cooldownSeconds": 8, "sessionMinutes": 20, "feedSampleSize": 20}[key])) <= maximum:
             raise ValueError("數字設定超出允許範圍。")
     return settings
 
@@ -714,6 +986,14 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
+        if self.path == "/api/feedback":
+            try:
+                payload = self._read_json()
+                CONTENT.feedback(payload.get("id"), payload.get("value"))
+                self._send_json({"ok": True})
+            except Exception as exc:
+                self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if self.path == "/api/settings":
             try:
                 payload = self._read_json()
@@ -757,6 +1037,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
             STATE.running = True
             STATE.mode = "browsing"
+            STATE.browse_stopped = False
             stop_signal = StopSignal()
             control = BrowserControl()
             STATE.stop_signal = stop_signal

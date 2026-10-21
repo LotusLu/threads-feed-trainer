@@ -203,7 +203,9 @@ class ManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
             profile = Path(directory) / "dedicated"
             with patch.object(app, "PROFILE_DIR", profile), patch.object(app, "async_playwright", return_value=runtime), patch.object(app, "ManagedBrowser", return_value=browser) as managed:
                 trainer = app.ThreadsTrainer(app.parse_settings({"topics": "custom"}), lambda message: None, app.StopSignal())
+                trainer.content = app.ContentStore(Path(directory) / "content.json")
                 trainer._cycle_topics = AsyncMock()
+                trainer._sample_feed = AsyncMock()
                 await trainer.run()
                 await app.open_manual_window(app.StopSignal(), app.BrowserControl(), app.THREADS_HOME, login=True)
                 await app.open_manual_window(app.StopSignal(), app.BrowserControl(), "https://www.threads.com/@user/post/current")
@@ -291,7 +293,7 @@ class PersistenceTests(unittest.TestCase):
         self.path.write_text(json.dumps({"version": 1, "draft": {"topics": "mine", "category": "old"}, "lastRun": None}))
         loaded = SettingsStore(self.path).snapshot()
         self.assertEqual(loaded["draft"], {"topics": "mine"})
-        self.assertEqual(loaded["ui"], {"topicsCollapsed": False, "logCollapsed": False})
+        self.assertEqual(loaded["ui"], {"topicsCollapsed": False, "logCollapsed": False, "reportsCollapsed": False})
 
 
 class HttpTests(unittest.TestCase):

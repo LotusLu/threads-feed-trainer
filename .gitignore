@@ -8,3 +8,6 @@ __pycache__/
 
 .trainer-settings.json
 .trainer-settings.json.*
+
+.trainer-content.json
+.trainer-content.json.*
